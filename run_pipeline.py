@@ -4,6 +4,20 @@ import argparse
 from pathlib import Path
 import sys
 
+script_dir_candidates = []
+if "__file__" in globals():
+    script_file = Path(__file__).resolve()
+else:
+    fallback_script = Path("/content/Bridgestone-Primary/run_pipeline.py")
+    script_file = fallback_script if fallback_script.exists() else Path.cwd() / "run_pipeline.py"
+
+if "__file__" in globals():
+    script_dir_candidates.append(Path(__file__).resolve().parent)
+script_dir_candidates.extend([script_file.parent, Path("/content/Bridgestone-Primary"), Path.cwd()])
+for candidate in script_dir_candidates:
+    if candidate.exists() and str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
 from convert_input_to_processing import (
     _promote_first_row_to_header_if_needed,
     _select_and_rename_columns,
@@ -12,18 +26,10 @@ from convert_input_to_processing import (
 )
 from format_extracted_to_output import save_formatted_output
 
-script_dir_candidates = []
-if "__file__" in globals():
-    script_dir_candidates.append(Path(__file__).resolve().parent)
-script_dir_candidates.extend([Path("/content/Bridgestone-Primary"), Path.cwd()])
-for candidate in script_dir_candidates:
-    if candidate.exists() and str(candidate) not in sys.path:
-        sys.path.insert(0, str(candidate))
-
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = script_file.parent
 DEFAULT_CODE_ROOT = Path("/content/Bridgestone-Primary")
 DEFAULT_DATA_ROOT = Path(
-    "/content/drive/Shareddrives/FA Ops Europe: Rate Maintenance Team/"
+    "/content/drive/Shareddrives/FA Ops Europe: Rate Maintenance Team /"
     "Documents/AI Adoption RMT/RMT_Bridgestone/Primary"
 )
 DEFAULT_INPUT_DIR = DEFAULT_DATA_ROOT / "input"
