@@ -140,16 +140,20 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def _resolve_directories(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    # Hardcoded Google Drive directories as requested.
+    return DEFAULT_INPUT_DIR, DEFAULT_PROCESSING_DIR, DEFAULT_OUTPUT_DIR
+
+
 if __name__ == "__main__":
     args = parse_args()
-    default_input = DEFAULT_INPUT_DIR if DEFAULT_INPUT_DIR.exists() else BASE_DIR / "input"
-    default_processing = (
-        DEFAULT_PROCESSING_DIR if DEFAULT_PROCESSING_DIR.exists() else BASE_DIR / "processing"
-    )
-    default_output = DEFAULT_OUTPUT_DIR if DEFAULT_OUTPUT_DIR.exists() else BASE_DIR / "output"
+    input_dir, processing_dir, output_dir = _resolve_directories(args)
+    print(f"Using input dir: {input_dir}")
+    print(f"Using processing dir: {processing_dir}")
+    print(f"Using output dir: {output_dir}")
 
     run_pipeline(
-        input_dir=args.input_dir or default_input,
-        processing_dir=args.processing_dir or default_processing,
-        output_dir=args.output_dir or default_output,
+        input_dir=input_dir,
+        processing_dir=processing_dir,
+        output_dir=output_dir,
     )
