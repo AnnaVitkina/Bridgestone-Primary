@@ -18,6 +18,8 @@ for candidate in script_dir_candidates:
     if candidate.exists() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
+import convert_input_to_processing as convert_module
+import format_extracted_to_output as format_module
 from convert_input_to_processing import (
     _promote_first_row_to_header_if_needed,
     _select_and_rename_columns,
@@ -96,6 +98,10 @@ def run_pipeline(
     processing_dir: Path,
     output_dir: Path,
 ) -> None:
+    # Force downstream modules to save into the pipeline target folders.
+    convert_module.PROCESSING_DIR = processing_dir
+    format_module.OUTPUT_DIR = output_dir
+
     files = _list_input_files(input_dir)
     if not files:
         raise FileNotFoundError(f"No supported files found in '{input_dir}'.")
