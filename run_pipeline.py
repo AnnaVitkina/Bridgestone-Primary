@@ -37,6 +37,9 @@ DEFAULT_DATA_ROOT = Path(
 DEFAULT_INPUT_DIR = DEFAULT_DATA_ROOT / "input"
 DEFAULT_PROCESSING_DIR = DEFAULT_DATA_ROOT / "processing"
 DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "output"
+LOCAL_INPUT_DIR = BASE_DIR / "input"
+LOCAL_PROCESSING_DIR = BASE_DIR / "processing"
+LOCAL_OUTPUT_DIR = BASE_DIR / "output"
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
 
 
@@ -142,18 +145,52 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override output directory.",
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Force local folders (next to this script) instead of Google Drive paths.",
+    )
     args, _unknown = parser.parse_known_args()
     return args
 
 
-def _resolve_directories(args: argparse.Namespace) -> tuple[Path, Path, Path]:
-    # Hardcoded Google Drive directories as requested.
-    return DEFAULT_INPUT_DIR, DEFAULT_PROCESSING_DIR, DEFAULT_OUTPUT_DIR
+def _drive_paths_available() -> bool:
+    return DEFAULT_DATA_ROOT.exists() and DEFAULT_INPUT_DIR.exists()
+
+
+def _local_paths(base_dir: Path | None = None) -> tuple[Path, Path, Path]:
+    root = base_dir or BASE_DIR
+    return root / "input", root / "processing", root / "output"
+
+
+def _resolve_directories(args: argparse.Namespace) -> tuple[Path, Path, Path, str]:
+    # Explicit overrides always win.
+    if args.input_dir or args.processing_dir or args.output_dir:
+        local_base = args.base_dir if args.base_dir != DEFAULT_CODE_ROOT else BASE_DIR
+        local_input, local_processing, local_output = _local_paths(local_base)
+        return (
+            args.input_dir or local_input,
+            args.processing_dir or local_processing,
+            args.output_dir or local_output,
+            "custom",
+        )
+
+    if args.local or not _drive_paths_available():
+        local_base = args.base_dir if args.base_dir != DEFAULT_CODE_ROOT else BASE_DIR
+        input_dir, processing_dir, output_dir = _local_paths(local_base)
+        if args.local:
+            mode = "local (forced)"
+        else:
+            mode = "local (Google Drive path not found)"
+        return input_dir, processing_dir, output_dir, mode
+
+    return DEFAULT_INPUT_DIR, DEFAULT_PROCESSING_DIR, DEFAULT_OUTPUT_DIR, "google-drive"
 
 
 if __name__ == "__main__":
     args = parse_args()
-    input_dir, processing_dir, output_dir = _resolve_directories(args)
+    input_dir, processing_dir, output_dir, mode = _resolve_directories(args)
+    print(f"Running mode: {mode}")
     print(f"Using input dir: {input_dir}")
     print(f"Using processing dir: {processing_dir}")
     print(f"Using output dir: {output_dir}")
