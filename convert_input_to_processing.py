@@ -9,12 +9,17 @@ PROCESSING_DIR = BASE_DIR / "processing"
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
 
+DEFAULT_FIXED_TABS = ("Tab Index", "Accessorials")
+
 
 def _canonical_name(name: object) -> str:
     value = str(name).strip().lower()
     for token in (" ", "_", "-", "/", "(", ")", '"', "'", ":", ".", ",", "#"):
         value = value.replace(token, "")
     return value
+
+
+METADATA_SHEET_KEYS = {_canonical_name(name) for name in DEFAULT_FIXED_TABS}
 
 
 def _normalize_and_deduplicate_headers(headers: list[object]) -> list[str]:
@@ -252,6 +257,110 @@ def list_input_files() -> list[Path]:
     )
 
 
+def _find_sheet_by_name(sheet_names: list[str], target: str) -> str | None:
+    target_key = _canonical_name(target)
+    for name in sheet_names:
+        if _canonical_name(name) == target_key:
+            return name
+    return None
+
+
+def _is_metadata_sheet(sheet_name: str) -> bool:
+    return _canonical_name(sheet_name) in METADATA_SHEET_KEYS
+
+
+def _find_tab_index_header_row(df_raw: pd.DataFrame, max_scan_rows: int = 30) -> int | None:
+    scan_limit = min(len(df_raw), max_scan_rows)
+    for row_idx in range(scan_limit):
+        for cell in df_raw.iloc[row_idx]:
+            if _canonical_name(cell) == "tabname":
+                return row_idx
+    return None
+
+
+def _get_active_tabs_from_tab_index(file_path: Path, tab_index_sheet: str) -> list[str]:
+    raw = pd.read_excel(file_path, sheet_name=tab_index_sheet, header=None)
+    if raw.empty:
+        return []
+
+    header_row_idx = _find_tab_index_header_row(raw)
+    if header_row_idx is None:
+        return []
+
+    headers = [_canonical_name(value) for value in raw.iloc[header_row_idx].tolist()]
+    tab_name_col = next((idx for idx, header in enumerate(headers) if header == "tabname"), None)
+    status_col = next((idx for idx, header in enumerate(headers) if header == "status"), None)
+    if tab_name_col is None:
+        return []
+
+    active_tabs: list[str] = []
+    for row_idx in range(header_row_idx + 1, len(raw)):
+        row = raw.iloc[row_idx]
+        tab_value = row.iloc[tab_name_col] if tab_name_col < len(row) else None
+        if pd.isna(tab_value) or not str(tab_value).strip():
+            continue
+
+        if status_col is not None:
+            status_value = row.iloc[status_col] if status_col < len(row) else None
+            if pd.isna(status_value) or _canonical_name(status_value) != "active":
+                continue
+
+        active_tabs.append(str(tab_value).strip())
+    return active_tabs
+
+
+def get_predefined_tabs(file_path: Path, sheet_names: list[str]) -> list[str]:
+    """Build predefined tab list: Tab Index, Accessorials, plus active tabs from Tab Index."""
+    by_lower = {name.lower(): name for name in sheet_names}
+    selected: list[str] = []
+    seen_lower: set[str] = set()
+
+    for fixed_name in DEFAULT_FIXED_TABS:
+        actual = by_lower.get(fixed_name.lower())
+        if actual is not None and actual.lower() not in seen_lower:
+            selected.append(actual)
+            seen_lower.add(actual.lower())
+
+    tab_index_sheet = _find_sheet_by_name(sheet_names, "Tab Index")
+    if tab_index_sheet is not None:
+        for tab_name in _get_active_tabs_from_tab_index(file_path, tab_index_sheet):
+            actual = by_lower.get(tab_name.lower())
+            if actual is not None and actual.lower() not in seen_lower:
+                selected.append(actual)
+                seen_lower.add(actual.lower())
+
+    return selected
+
+
+def _choose_data_sheet(file_path: Path, sheet_names: list[str]) -> str:
+    predefined = get_predefined_tabs(file_path, sheet_names)
+    tab_index_sheet = _find_sheet_by_name(sheet_names, "Tab Index")
+    data_sheets = [name for name in predefined if not _is_metadata_sheet(name)]
+
+    if data_sheets:
+        rate_table = _find_sheet_by_name(data_sheets, "Rate Table")
+        return rate_table or data_sheets[0]
+
+    if tab_index_sheet is not None:
+        non_metadata = [name for name in sheet_names if not _is_metadata_sheet(name)]
+        if non_metadata:
+            print(
+                "Warning: Tab Index found but no active data tabs. "
+                f"Using first non-metadata tab '{non_metadata[0]}'."
+            )
+            return non_metadata[0]
+
+    rate_table = _find_sheet_by_name(sheet_names, "Rate Table")
+    if rate_table is not None:
+        return rate_table
+
+    df_sheet = _find_sheet_by_name(sheet_names, "DF")
+    if df_sheet is not None:
+        return df_sheet
+
+    return sheet_names[0]
+
+
 def choose_file(files: list[Path]) -> Path:
     print("Files available in input folder:\n")
     for idx, file_path in enumerate(files, start=1):
@@ -278,22 +387,12 @@ def load_dataframe(file_path: Path) -> pd.DataFrame:
     if len(sheet_names) == 1:
         return pd.read_excel(file_path, sheet_name=sheet_names[0])
 
-    preferred_sheet = next((s for s in sheet_names if s.strip().lower() == "rate table"), None)
-    if preferred_sheet:
-        print(f"Multiple tabs found. Using preferred tab '{preferred_sheet}'.")
-        return pd.read_excel(file_path, sheet_name=preferred_sheet)
-
-    df_sheet = next((s for s in sheet_names if s.strip().lower() == "df"), None)
-    if df_sheet:
-        print(f"Multiple tabs found. Using fallback tab '{df_sheet}'.")
-        return pd.read_excel(file_path, sheet_name=df_sheet)
-
-    print(
-        "Multiple tabs found, but no tab named 'DF'. "
-        "Using the first tab: "
-        f"'{sheet_names[0]}'."
-    )
-    return pd.read_excel(file_path, sheet_name=sheet_names[0])
+    predefined = get_predefined_tabs(file_path, sheet_names)
+    chosen_sheet = _choose_data_sheet(file_path, sheet_names)
+    if predefined:
+        print(f"Predefined tabs: {', '.join(predefined)}")
+    print(f"Multiple tabs found. Using tab '{chosen_sheet}'.")
+    return pd.read_excel(file_path, sheet_name=chosen_sheet)
 
 
 def save_to_processing(df: pd.DataFrame, source_file: Path) -> Path:
