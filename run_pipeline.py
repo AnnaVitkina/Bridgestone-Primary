@@ -37,9 +37,11 @@ DEFAULT_DATA_ROOT = Path(
 DEFAULT_INPUT_DIR = DEFAULT_DATA_ROOT / "input"
 DEFAULT_PROCESSING_DIR = DEFAULT_DATA_ROOT / "processing"
 DEFAULT_OUTPUT_DIR = DEFAULT_DATA_ROOT / "output"
+DEFAULT_ADDITION_DIR = DEFAULT_DATA_ROOT / "addition"
 LOCAL_INPUT_DIR = BASE_DIR / "input"
 LOCAL_PROCESSING_DIR = BASE_DIR / "processing"
 LOCAL_OUTPUT_DIR = BASE_DIR / "output"
+LOCAL_ADDITION_DIR = BASE_DIR / "addition"
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
 
 
@@ -100,10 +102,13 @@ def run_pipeline(
     input_dir: Path,
     processing_dir: Path,
     output_dir: Path,
+    addition_dir: Path | None = None,
 ) -> None:
     # Force downstream modules to save into the pipeline target folders.
     convert_module.PROCESSING_DIR = processing_dir
     format_module.OUTPUT_DIR = output_dir
+    if addition_dir is not None:
+        format_module.ADDITION_DIR = addition_dir
 
     files = _list_input_files(input_dir)
     if not files:
@@ -146,6 +151,12 @@ def parse_args() -> argparse.Namespace:
         help="Override output directory.",
     )
     parser.add_argument(
+        "--addition-dir",
+        type=Path,
+        default=None,
+        help="Override addition directory (Postal Code Zones.txt and other reference files).",
+    )
+    parser.add_argument(
         "--local",
         action="store_true",
         help="Force local folders (next to this script) instead of Google Drive paths.",
@@ -158,45 +169,89 @@ def _drive_paths_available() -> bool:
     return DEFAULT_DATA_ROOT.exists() and DEFAULT_INPUT_DIR.exists()
 
 
-def _local_paths(base_dir: Path | None = None) -> tuple[Path, Path, Path]:
+def _local_paths(base_dir: Path | None = None) -> tuple[Path, Path, Path, Path]:
     root = base_dir or BASE_DIR
-    return root / "input", root / "processing", root / "output"
+    return root / "input", root / "processing", root / "output", root / "addition"
 
 
-def _resolve_directories(args: argparse.Namespace) -> tuple[Path, Path, Path, str]:
+def _resolve_addition_dir(
+    input_dir: Path,
+    processing_dir: Path,
+    output_dir: Path,
+    *,
+    explicit_base: Path | None = None,
+) -> Path:
+    """Prefer addition/ next to the active data root (e.g. Google Drive Primary)."""
+    parent_dirs = {input_dir.parent, processing_dir.parent, output_dir.parent}
+    candidates: list[Path] = []
+    if len(parent_dirs) == 1:
+        candidates.append(next(iter(parent_dirs)) / "addition")
+    if explicit_base is not None:
+        candidates.append(explicit_base / "addition")
+    candidates.append(DEFAULT_ADDITION_DIR)
+    candidates.append(LOCAL_ADDITION_DIR)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else LOCAL_ADDITION_DIR
+
+
+def _resolve_directories(
+    args: argparse.Namespace,
+) -> tuple[Path, Path, Path, Path, str]:
     # Explicit overrides always win.
     if args.input_dir or args.processing_dir or args.output_dir:
         local_base = args.base_dir if args.base_dir != DEFAULT_CODE_ROOT else BASE_DIR
-        local_input, local_processing, local_output = _local_paths(local_base)
-        return (
-            args.input_dir or local_input,
-            args.processing_dir or local_processing,
-            args.output_dir or local_output,
-            "custom",
+        local_input, local_processing, local_output, local_addition = _local_paths(local_base)
+        input_dir = args.input_dir or local_input
+        processing_dir = args.processing_dir or local_processing
+        output_dir = args.output_dir or local_output
+        addition_dir = _resolve_addition_dir(
+            input_dir,
+            processing_dir,
+            output_dir,
+            explicit_base=local_base if args.base_dir != DEFAULT_CODE_ROOT else None,
         )
+        return input_dir, processing_dir, output_dir, addition_dir, "custom"
 
     if args.local or not _drive_paths_available():
         local_base = args.base_dir if args.base_dir != DEFAULT_CODE_ROOT else BASE_DIR
-        input_dir, processing_dir, output_dir = _local_paths(local_base)
+        input_dir, processing_dir, output_dir, addition_dir = _local_paths(local_base)
         if args.local:
             mode = "local (forced)"
         else:
             mode = "local (Google Drive path not found)"
-        return input_dir, processing_dir, output_dir, mode
+        return input_dir, processing_dir, output_dir, addition_dir, mode
 
-    return DEFAULT_INPUT_DIR, DEFAULT_PROCESSING_DIR, DEFAULT_OUTPUT_DIR, "google-drive"
+    input_dir, processing_dir, output_dir, addition_dir = (
+        DEFAULT_INPUT_DIR,
+        DEFAULT_PROCESSING_DIR,
+        DEFAULT_OUTPUT_DIR,
+        DEFAULT_ADDITION_DIR,
+    )
+    return input_dir, processing_dir, output_dir, addition_dir, "google-drive"
 
 
 if __name__ == "__main__":
     args = parse_args()
-    input_dir, processing_dir, output_dir, mode = _resolve_directories(args)
+    input_dir, processing_dir, output_dir, addition_dir, mode = _resolve_directories(args)
+    if args.addition_dir is not None:
+        addition_dir = args.addition_dir
     print(f"Running mode: {mode}")
     print(f"Using input dir: {input_dir}")
     print(f"Using processing dir: {processing_dir}")
     print(f"Using output dir: {output_dir}")
+    print(f"Using addition dir: {addition_dir}")
 
     run_pipeline(
         input_dir=input_dir,
         processing_dir=processing_dir,
         output_dir=output_dir,
+        addition_dir=addition_dir,
     )
