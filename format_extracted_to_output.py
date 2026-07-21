@@ -9,7 +9,12 @@ from openpyxl.styles import Alignment, Font, PatternFill
 BASE_DIR = Path(__file__).resolve().parent
 PROCESSING_DIR = BASE_DIR / "processing"
 OUTPUT_DIR = BASE_DIR / "output"
-POSTAL_CODE_ZONES_PATH = BASE_DIR / "addition" / "Postal Code Zones.txt"
+ADDITION_DIR = BASE_DIR / "addition"
+POSTAL_CODE_ZONES_FILE = "Postal Code Zones.txt"
+
+
+def postal_code_zones_path() -> Path:
+    return ADDITION_DIR / POSTAL_CODE_ZONES_FILE
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
 
@@ -380,17 +385,18 @@ def _equipment_condition_values_intersect(equipment_a: object, equipment_b: obje
     return bool(tokens_a & tokens_b)
 
 
-def _load_postal_code_zones(path: Path = POSTAL_CODE_ZONES_PATH) -> dict[str, list[tuple[str, set[str]]]]:
+def _load_postal_code_zones(path: Path | None = None) -> dict[str, list[tuple[str, set[str]]]]:
     """Map canonical zone names to (country, postal-code tokens)."""
-    if not path.exists():
+    zones_path = path or postal_code_zones_path()
+    if not zones_path.exists():
         return {}
 
     zones_by_name: dict[str, list[tuple[str, set[str]]]] = {}
-    raw = pd.read_csv(path, sep="\t", dtype=str).fillna("")
+    raw = pd.read_csv(zones_path, sep="\t", dtype=str).fillna("")
     expected_columns = {"name", "country", "postal code"}
     if not expected_columns.issubset({_canonical_name(col) for col in raw.columns}):
         raw = pd.read_csv(
-            path,
+            zones_path,
             sep="\t",
             dtype=str,
             header=None,
