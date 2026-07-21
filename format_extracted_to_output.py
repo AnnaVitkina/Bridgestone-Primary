@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import unicodedata
 
 import pandas as pd
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -8,6 +9,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 BASE_DIR = Path(__file__).resolve().parent
 PROCESSING_DIR = BASE_DIR / "processing"
 OUTPUT_DIR = BASE_DIR / "output"
+POSTAL_CODE_ZONES_PATH = BASE_DIR / "addition" / "Postal Code Zones.txt"
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xls", ".xlsm", ".xlsb", ".csv"}
 
@@ -86,95 +88,144 @@ CONDITION_RULES = [
 ]
 
 CARRIER_RULES = [
-    {"Name": "Ares S.L.", "Operator": "equals", "Values": "'ARES BILBAO S.L.'"},
-    {"Name": "Containerships - CMA CGM GmbH", "Operator": "equals", "Values": "'CMA CGM.SA'"},
-    {"Name": "Dolt Logistics", "Operator": "equals", "Values": "'DLS'"},
-    {"Name": "ECS", "Operator": "equals", "Values": "'ECS European Containers'"},
-    {"Name": "Ewals Cargo Care (R5)", "Operator": "equals", "Values": "'Ewals'"},
+    {"Name": "Ares S.L.", "Operator": "CARRIER equals", "Values": "'ARES BILBAO S.L.'"},
+    {"Name": "Containerships - CMA CGM GmbH", "Operator": "CARRIER equals", "Values": "'CMA CGM.SA'"},
+    {"Name": "Dolt Logistics", "Operator": "CARRIER equals", "Values": "'DLS'"},
+    {"Name": "ECS", "Operator": "CARRIER equals", "Values": "'ECS European Containers'"},
+    {"Name": "Ewals Cargo Care (R5)", "Operator": "CARRIER equals", "Values": "'Ewals'"},
     {
         "Name": "FERCAM SPA (R2)",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'FERCAM SPA', 'Fercam BG', 'Fercam AT'",
     },
     {
         "Name": "G.T.S. SPA - General Transport Service",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'GTS TRASPORTI SPA'",
     },
-    {"Name": "Gravis transport", "Operator": "equals", "Values": "'Gravis'"},
-    {"Name": "IntegreTrans", "Operator": "equals", "Values": "'INTEGRE TRANS'"},
-    {"Name": "J&S Speed Kft (R2)", "Operator": "equals", "Values": "'J & S Speed Kft.'"},
-    {"Name": "Marcotran", "Operator": "equals", "Values": "'MARCOTRAN TISA'"},
-    {"Name": "Miratrans", "Operator": "equals", "Values": "'Miratrans Transport'"},
-    {"Name": "O.K. Trans", "Operator": "equals", "Values": "'O.K.TRANS PRAHA spol. s.r.o.'"},
-    {"Name": "Patinter", "Operator": "equals", "Values": "'PATINTER HQ'"},
-    {"Name": "Patinter , SA (R6)", "Operator": "equals", "Values": "'PATINTER HQ'"},
-    {"Name": "PTM", "Operator": "equals", "Values": "'PTM TRANSPORT sp. z o.o.'"},
+    {"Name": "Gravis transport", "Operator": "CARRIER equals", "Values": "'Gravis'"},
+    {"Name": "IntegreTrans", "Operator": "CARRIER equals", "Values": "'INTEGRE TRANS'"},
+    {"Name": "J&S Speed Kft (R2)", "Operator": "CARRIER equals", "Values": "'J & S Speed Kft.'"},
+    {"Name": "Marcotran", "Operator": "CARRIER equals", "Values": "'MARCOTRAN TISA'"},
+    {"Name": "Miratrans", "Operator": "CARRIER equals", "Values": "'Miratrans Transport'"},
+    {"Name": "O.K. Trans", "Operator": "CARRIER equals", "Values": "'O.K.TRANS PRAHA spol. s.r.o.'"},
+    {"Name": "Patinter", "Operator": "CARRIER equals", "Values": "'PATINTER HQ'"},
+    {"Name": "Patinter , SA (R6)", "Operator": "CARRIER equals", "Values": "'PATINTER HQ'"},
+    {"Name": "PTM", "Operator": "CARRIER equals", "Values": "'PTM TRANSPORT sp. z o.o.'"},
     {
         "Name": "NINATRANS IBERIA LOGISTICA",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'NINATRANS IBERIA LOGISTICA SAU'",
     },
     {
         "Name": "SLC Transport - Szíjj Csaba (R2)",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'SLC Transport'",
     },
-    {"Name": "Smet", "Operator": "equals", "Values": "'SMET SPA'"},
-    {"Name": "Stalspeed", "Operator": "equals", "Values": "'STALSPEED Sp. z o.o.'"},
+    {"Name": "Smet", "Operator": "CARRIER equals", "Values": "'SMET SPA'"},
+    {"Name": "Stalspeed", "Operator": "CARRIER equals", "Values": "'STALSPEED Sp. z o.o.'"},
     {
         "Name": "STANTE LOGISTICS SRL",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'STANTE LOGISTICS SPA SB'",
     },
-    {"Name": "Suus", "Operator": "equals", "Values": "'SUUS Logistics SA'"},
+    {"Name": "Suus", "Operator": "CARRIER equals", "Values": "'SUUS Logistics SA'"},
     {
         "Name": "Szam",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'Szam Nemzetkozi Arufuvarozo Kft.'",
     },
-    {"Name": "Traffic", "Operator": "equals", "Values": "'Traffic Transport Sp.z o.o.'"},
-    {"Name": "Trans Sped", "Operator": "equals", "Values": "'Transsped'"},
-    {"Name": "Transfennica", "Operator": "equals", "Values": "'Transfennica logistics BVBA'"},
-    {"Name": "Transintertop", "Operator": "equals", "Values": "'Transintertop Kft'"},
+    {"Name": "Traffic", "Operator": "CARRIER equals", "Values": "'Traffic Transport Sp.z o.o.'"},
+    {"Name": "Trans Sped", "Operator": "CARRIER equals", "Values": "'Transsped'"},
+    {"Name": "Transfennica", "Operator": "CARRIER equals", "Values": "'Transfennica logistics BVBA'"},
+    {"Name": "Transintertop", "Operator": "CARRIER equals", "Values": "'Transintertop Kft'"},
     {
         "Name": "TRANSPORTES HNOS. LAREDO (R3)",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'TRANSPORTES HNOS. LAREDO S.A.'",
     },
     {
         "Name": "Vos Logistics Cargo",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'Vos Logistics Cargo International'",
     },
     {
         "Name": "XPO Logistics Spain",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'XPO TRANSPORT SOLUTIONS SPAIN SL'",
     },
     {
         "Name": "OnTime",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'ONTIME TRANSPORTE Y LOGISTICA SL'",
     },
     {
         "Name": "P&O Ferrymasters Limited (R2)",
-        "Operator": "equals",
+        "Operator": "CARRIER equals",
         "Values": "'P&O Ferrymasters Ltd'",
     },
-    {"Name": "Ravitex", "Operator": "equals", "Values": "'RAVITEX SRL'"},
-    {"Name": "DHL", "Operator": "equals", "Values": "'DHL FREIGHT SPAIN SLU'"},
-    {"Name": "CEVA Freight Poland", "Operator": "equals", "Values": "'Ceva'"},
-    {"Name": "Samskip", "Operator": "equals", "Values": "'SAMSKIP MULTIMODAL B.V.'"},
-    {"Name": "Chomar", "Operator": "equals", "Values": "'CHOMAR Sp. z o.o.'"},
-    {"Name": "Indeka/Indeka Sp. z o.o.", "Operator": "equals", "Values": "'Indeka Sp. z o.o.'"},
-    {"Name": "Logisteed Poland", "Operator": "equals", "Values": "'LOGISTEED POLAND Sp. z o.o.'"},
-    {"Name": "Baltic Transline", "Operator": "equals", "Values": "'Baltic Transline UAB'"},
+    {"Name": "Ravitex", "Operator": "CARRIER equals", "Values": "'RAVITEX SRL'"},
+    {"Name": "DHL", "Operator": "CARRIER equals", "Values": "'DHL FREIGHT SPAIN SLU'"},
+    {"Name": "CEVA Freight Poland", "Operator": "CARRIER equals", "Values": "'Ceva'"},
+    {"Name": "Samskip", "Operator": "CARRIER equals", "Values": "'SAMSKIP MULTIMODAL B.V.'"},
+    {"Name": "Chomar", "Operator": "CARRIER equals", "Values": "'CHOMAR Sp. z o.o.'"},
+    {"Name": "Indeka/Indeka Sp. z o.o.", "Operator": "CARRIER equals", "Values": "'Indeka Sp. z o.o.'"},
+    {"Name": "Logisteed Poland", "Operator": "CARRIER equals", "Values": "'LOGISTEED POLAND Sp. z o.o.'"},
+    {"Name": "Baltic Transline", "Operator": "CARRIER equals", "Values": "'Baltic Transline UAB'"},
+]
+
+
+CONDITION_BLOCK_COLUMNS = {
+    "Conditions for Equipment type": "Equipment type",
+    "Conditions for Carrier": "Carrier",
+    "Conditions for Destination city to differentiate lanes": "Destination city to differentiate lanes",
+}
+
+CITIES_TO_UPPERCASE = [
+    "Astana",
+    "Atessa",
+    "Beaune",
+    "Bischofsheim",
+    "Bitonto",
+    "Boblingen",
+    "Bourne",
+    "Bremen-hemelingen",
+    "Bremerhaven",
+    "Bucaresti",
+    "Burgos",
+    "Bydgoszcz",
+    "Chanteloup Les Vignes",
+    "Ditzingen",
+    "Dublin",
+    "Duisburg",
+    "Dürrholz",
+    "Ehingen",
+    "Genk",
+    "Gernsheim",
+    "Ghent",
+    "Giengen/Brenz",
+    "Hainichen",
+    "Holle",
+    "Karaganda",
+    "Kirchdorf",
+    "Klingenberg",
+    "Łowicz",
+    "Paczkowo",
+    "Philippsburg",
+    "Sint-niklaas",
+    "Stratford Upon Avon",
+    "Stryków",
+    "Tychy",
+    "Wedemark",
+    "Wilhelmshaven",
+    "Poznan",
 ]
 
 
 def _canonical_name(name: object) -> str:
     value = str(name).strip().lower()
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(char for char in value if not unicodedata.combining(char))
     for token in (" ", "_", "-", "/", "(", ")", '"', "'", ":", ".", ",", "#"):
         value = value.replace(token, "")
     return value
@@ -290,13 +341,219 @@ def _strip_parentheses(text: str) -> str:
     return re.sub(r"\s*\([^)]*\)", "", text).strip()
 
 
+def _split_csv_tokens(text: object) -> list[str]:
+    if pd.isna(text):
+        return []
+    return [part.strip() for part in str(text).split(",") if part.strip()]
+
+
+def _parse_condition_value_tokens(values_text: str) -> set[str]:
+    quoted = re.findall(r"'([^']*)'", values_text)
+    if quoted:
+        return {_canonical_name(value) for value in quoted if value.strip()}
+    return {_canonical_name(value) for value in _split_csv_tokens(values_text)}
+
+
+def _equipment_condition_tokens(equipment_type: object) -> set[str]:
+    if pd.isna(equipment_type):
+        return set()
+
+    canonical_equipment = _canonical_name(equipment_type)
+    if not canonical_equipment:
+        return set()
+
+    tokens = {canonical_equipment}
+    for rule in CONDITION_RULES:
+        rule_name = _canonical_name(rule["Name"])
+        rule_values = _parse_condition_value_tokens(rule["Values"])
+        if canonical_equipment == rule_name or canonical_equipment in rule_values:
+            tokens.add(rule_name)
+            tokens.update(rule_values)
+    return tokens
+
+
+def _equipment_condition_values_intersect(equipment_a: object, equipment_b: object) -> bool:
+    tokens_a = _equipment_condition_tokens(equipment_a)
+    tokens_b = _equipment_condition_tokens(equipment_b)
+    if not tokens_a or not tokens_b:
+        return False
+    return bool(tokens_a & tokens_b)
+
+
+def _load_postal_code_zones(path: Path = POSTAL_CODE_ZONES_PATH) -> dict[str, list[tuple[str, set[str]]]]:
+    """Map canonical zone names to (country, postal-code tokens)."""
+    if not path.exists():
+        return {}
+
+    zones_by_name: dict[str, list[tuple[str, set[str]]]] = {}
+    raw = pd.read_csv(path, sep="\t", dtype=str).fillna("")
+    expected_columns = {"name", "country", "postal code"}
+    if not expected_columns.issubset({_canonical_name(col) for col in raw.columns}):
+        raw = pd.read_csv(
+            path,
+            sep="\t",
+            dtype=str,
+            header=None,
+            names=["Name", "Country", "Postal Code", "Excluded"],
+        ).fillna("")
+    for _, row in raw.iterrows():
+        name_key = _canonical_name(row.get("Name", ""))
+        if not name_key:
+            continue
+
+        country = str(row.get("Country", "")).strip().upper()
+        postal_tokens = {
+            _canonical_name(token)
+            for token in _split_csv_tokens(row.get("Postal Code", ""))
+            if str(token).strip()
+        }
+        excluded_tokens = {
+            _canonical_name(token)
+            for token in _split_csv_tokens(row.get("Excluded", ""))
+            if str(token).strip()
+        }
+        if excluded_tokens:
+            postal_tokens -= excluded_tokens
+        if not country or not postal_tokens:
+            continue
+
+        zones_by_name.setdefault(name_key, []).append((country, postal_tokens))
+
+    return zones_by_name
+
+
+def _zone_keys_for_value(
+    value: object,
+    country_value: object,
+    zones_by_name: dict[str, list[tuple[str, set[str]]]],
+) -> set[tuple[str, str]]:
+    if pd.isna(value):
+        return set()
+
+    text = str(value).strip()
+    if not text:
+        return set()
+
+    keys: set[tuple[str, str]] = set()
+    lookup_keys = [_canonical_name(text)]
+    lookup_keys.extend(_canonical_name(token) for token in _split_csv_tokens(text))
+
+    for lookup_key in lookup_keys:
+        for country, postal_tokens in zones_by_name.get(lookup_key, []):
+            for postal_token in postal_tokens:
+                keys.add((country, postal_token))
+
+    if keys:
+        return keys
+
+    country = str(country_value).strip().upper() if pd.notna(country_value) else ""
+    fallback_token = _canonical_name(text)
+    if country and fallback_token:
+        return {(country, fallback_token)}
+    if fallback_token:
+        return {("", fallback_token)}
+    return set()
+
+
+def _zone_keys_intersect(keys_a: set[tuple[str, str]], keys_b: set[tuple[str, str]]) -> bool:
+    return bool(keys_a & keys_b)
+
+
+def _lanes_need_differentiation(
+    row_a: pd.Series,
+    row_b: pd.Series,
+    *,
+    carrier_col: str,
+    equipment_col: str,
+    origin_postal_col: str,
+    origin_country_col: str,
+    destination_col: str,
+    destination_country_col: str,
+    zones_by_name: dict[str, list[tuple[str, set[str]]]],
+) -> bool:
+    if str(row_a[carrier_col]).strip() != str(row_b[carrier_col]).strip():
+        return False
+
+    if not _equipment_condition_values_intersect(row_a[equipment_col], row_b[equipment_col]):
+        return False
+
+    origin_keys_a = _zone_keys_for_value(row_a[origin_postal_col], row_a[origin_country_col], zones_by_name)
+    origin_keys_b = _zone_keys_for_value(row_b[origin_postal_col], row_b[origin_country_col], zones_by_name)
+    destination_keys_a = _zone_keys_for_value(row_a[destination_col], row_a[destination_country_col], zones_by_name)
+    destination_keys_b = _zone_keys_for_value(row_b[destination_col], row_b[destination_country_col], zones_by_name)
+
+    origin_zone_overlap = _zone_keys_intersect(origin_keys_a, origin_keys_b)
+    destination_zone_overlap = _zone_keys_intersect(destination_keys_a, destination_keys_b)
+    if not (origin_zone_overlap and destination_zone_overlap):
+        return False
+
+    origin_values_differ = _canonical_name(row_a[origin_postal_col]) != _canonical_name(row_b[origin_postal_col])
+    destination_values_differ = _canonical_name(row_a[destination_col]) != _canonical_name(
+        row_b[destination_col]
+    )
+    return origin_values_differ or destination_values_differ
+
+
+def _cities_to_uppercase_keys() -> set[str]:
+    return {_canonical_name(city) for city in CITIES_TO_UPPERCASE}
+
+
+def _uppercase_listed_city(value: object) -> object:
+    if pd.isna(value):
+        return value
+
+    text = str(value).strip()
+    if not text:
+        return value
+
+    listed_keys = _cities_to_uppercase_keys()
+    if _canonical_name(text) in listed_keys or _canonical_name(_strip_parentheses(text)) in listed_keys:
+        return text.upper()
+    return value
+
+
+def _uppercase_listed_city_columns(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
+    for target_name in ("Destination City", "Destination city to differentiate lanes"):
+        column = next(
+            (col for col in df.columns if _canonical_name(col) == _canonical_name(target_name)),
+            None,
+        )
+        if column is not None:
+            df[column] = df[column].apply(_uppercase_listed_city)
+    return df
+
+
 def _fill_destination_city_to_differentiate_lanes(df: pd.DataFrame) -> pd.DataFrame:
+    """Fill differentiate-lanes for fully duplicated lane pairs.
+
+    A pair is filled only when all four dimensions intersect at the same time:
+    Carrier, Equipment type (via condition rules), Origin Postal Code zones,
+    and Destination City zones. At least one of the compared origin postal code
+    or destination city raw values must differ.
+    """
     destination_col = next(
         (col for col in df.columns if _canonical_name(col) == _canonical_name("Destination City")),
         None,
     )
     equipment_col = next(
         (col for col in df.columns if _canonical_name(col) == _canonical_name("Equipment type")),
+        None,
+    )
+    carrier_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Carrier")),
+        None,
+    )
+    origin_postal_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Origin Postal Code")),
+        None,
+    )
+    origin_country_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Origin Country")),
+        None,
+    )
+    destination_country_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Destination Country")),
         None,
     )
     diff_col = next(
@@ -307,18 +564,45 @@ def _fill_destination_city_to_differentiate_lanes(df: pd.DataFrame) -> pd.DataFr
         ),
         None,
     )
-    if destination_col is None or equipment_col is None or diff_col is None:
+    required_columns = (
+        destination_col,
+        equipment_col,
+        carrier_col,
+        origin_postal_col,
+        origin_country_col,
+        destination_country_col,
+        diff_col,
+    )
+    if any(column is None for column in required_columns):
         return df
 
+    zones_by_name = _load_postal_code_zones()
     df = df.copy()
     df[diff_col] = df[diff_col].astype("object")
-    cost_col = df.columns[-1]
-    grouped_count = (
-        df.groupby([destination_col, equipment_col, cost_col], dropna=False)[destination_col]
-        .transform("size")
-    )
-    duplicate_mask = grouped_count > 1
-    df.loc[duplicate_mask, diff_col] = df.loc[duplicate_mask, destination_col]
+
+    row_indexes = list(df.index)
+    rows_to_fill: set[object] = set()
+    for i in range(len(row_indexes)):
+        row_a = df.loc[row_indexes[i]]
+        for j in range(i + 1, len(row_indexes)):
+            row_b = df.loc[row_indexes[j]]
+            if _lanes_need_differentiation(
+                row_a,
+                row_b,
+                carrier_col=carrier_col,
+                equipment_col=equipment_col,
+                origin_postal_col=origin_postal_col,
+                origin_country_col=origin_country_col,
+                destination_col=destination_col,
+                destination_country_col=destination_country_col,
+                zones_by_name=zones_by_name,
+            ):
+                rows_to_fill.add(row_indexes[i])
+                rows_to_fill.add(row_indexes[j])
+
+    if rows_to_fill:
+        df.loc[list(rows_to_fill), diff_col] = df.loc[list(rows_to_fill), destination_col]
+
     return df
 
 
@@ -478,6 +762,7 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
     df = _normalize_equipment_type_values(df)
     df = _normalize_carrier_values(df)
     df = _fill_destination_city_to_differentiate_lanes(df)
+    df = _uppercase_listed_city_columns(df)
     df = _round_transport_cost_to_2_decimals(df)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -559,7 +844,7 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
         ws.freeze_panes = "A5"
 
         conditions_blocks = _build_conditions_blocks(df)
-        condition_names: set[str] = set()
+        condition_names_by_column: dict[int, set[str]] = {}
         if not conditions_blocks:
             pd.DataFrame(columns=["Rule #", "Name", "Operator", "Values", "Scope"]).to_excel(
                 writer,
@@ -583,14 +868,26 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
                     startrow=current_row,
                     index=False,
                 )
-                condition_names.update(
-                    str(v).strip()
-                    for v in block_df.get("Name", pd.Series(dtype="object")).dropna().tolist()
-                    if str(v).strip()
-                )
+                target_column = CONDITION_BLOCK_COLUMNS.get(block_title)
+                if target_column is not None:
+                    col_idx = next(
+                        (
+                            idx + 1
+                            for idx, col_name in enumerate(df.columns)
+                            if _canonical_name(col_name) == _canonical_name(target_column)
+                        ),
+                        None,
+                    )
+                    if col_idx is not None:
+                        block_names = {
+                            str(v).strip()
+                            for v in block_df.get("Name", pd.Series(dtype="object")).dropna().tolist()
+                            if str(v).strip()
+                        }
+                        condition_names_by_column.setdefault(col_idx, set()).update(block_names)
                 current_row += len(block_df) + 2
 
-        if condition_names:
+        if condition_names_by_column:
             highlight_fill = PatternFill("solid", fgColor="D9D9D9")
             data_start_row = 5
             data_end_row = ws.max_row
@@ -619,11 +916,14 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
                         or (origin_location_col is not None and col_idx == origin_location_col)
                     ):
                         continue
+                    allowed_names = condition_names_by_column.get(col_idx)
+                    if not allowed_names:
+                        continue
                     cell = ws.cell(row=row_idx, column=col_idx)
                     if cell.value is None:
                         continue
                     cell_text = str(cell.value).strip()
-                    if cell_text in condition_names:
+                    if cell_text in allowed_names:
                         cell.fill = highlight_fill
                         cell.font = Font(
                             name=cell.font.name,
