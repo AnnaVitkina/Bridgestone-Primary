@@ -500,6 +500,90 @@ def _lanes_need_differentiation(
     return origin_values_differ or destination_values_differ
 
 
+def _find_lane_differentiation_pairs(df: pd.DataFrame) -> list[tuple[object, object]]:
+    """Return row-index pairs that need destination-city lane differentiation."""
+    destination_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Destination City")),
+        None,
+    )
+    equipment_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Equipment type")),
+        None,
+    )
+    carrier_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Carrier")),
+        None,
+    )
+    origin_postal_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Origin Postal Code")),
+        None,
+    )
+    origin_country_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Origin Country")),
+        None,
+    )
+    destination_country_col = next(
+        (col for col in df.columns if _canonical_name(col) == _canonical_name("Destination Country")),
+        None,
+    )
+    required_columns = (
+        destination_col,
+        equipment_col,
+        carrier_col,
+        origin_postal_col,
+        origin_country_col,
+        destination_country_col,
+    )
+    if any(column is None for column in required_columns):
+        return []
+
+    zones_by_name = _load_postal_code_zones()
+    row_indexes = list(df.index)
+    pairs: list[tuple[object, object]] = []
+    for i in range(len(row_indexes)):
+        row_a = df.loc[row_indexes[i]]
+        for j in range(i + 1, len(row_indexes)):
+            row_b = df.loc[row_indexes[j]]
+            if _lanes_need_differentiation(
+                row_a,
+                row_b,
+                carrier_col=carrier_col,
+                equipment_col=equipment_col,
+                origin_postal_col=origin_postal_col,
+                origin_country_col=origin_country_col,
+                destination_col=destination_col,
+                destination_country_col=destination_country_col,
+                zones_by_name=zones_by_name,
+            ):
+                pairs.append((row_indexes[i], row_indexes[j]))
+    return pairs
+
+
+def _normalized_shipment_cost(value: object) -> float | None:
+    numeric = pd.to_numeric(value, errors="coerce")
+    if pd.isna(numeric):
+        return None
+    return round(float(numeric), 2)
+
+
+def _row_indexes_with_same_price_lane_pairs(df: pd.DataFrame) -> set[object]:
+    """Rows in lane-differentiation pairs where both lanes share the same transport cost."""
+    if df.empty or len(df.columns) == 0:
+        return set()
+
+    cost_col = df.columns[-1]
+    highlighted: set[object] = set()
+    for idx_a, idx_b in _find_lane_differentiation_pairs(df):
+        cost_a = _normalized_shipment_cost(df.loc[idx_a, cost_col])
+        cost_b = _normalized_shipment_cost(df.loc[idx_b, cost_col])
+        if cost_a is None or cost_b is None:
+            continue
+        if cost_a == cost_b:
+            highlighted.add(idx_a)
+            highlighted.add(idx_b)
+    return highlighted
+
+
 def _cities_to_uppercase_keys() -> set[str]:
     return {_canonical_name(city) for city in CITIES_TO_UPPERCASE}
 
@@ -582,29 +666,13 @@ def _fill_destination_city_to_differentiate_lanes(df: pd.DataFrame) -> pd.DataFr
     if any(column is None for column in required_columns):
         return df
 
-    zones_by_name = _load_postal_code_zones()
     df = df.copy()
     df[diff_col] = df[diff_col].astype("object")
 
-    row_indexes = list(df.index)
     rows_to_fill: set[object] = set()
-    for i in range(len(row_indexes)):
-        row_a = df.loc[row_indexes[i]]
-        for j in range(i + 1, len(row_indexes)):
-            row_b = df.loc[row_indexes[j]]
-            if _lanes_need_differentiation(
-                row_a,
-                row_b,
-                carrier_col=carrier_col,
-                equipment_col=equipment_col,
-                origin_postal_col=origin_postal_col,
-                origin_country_col=origin_country_col,
-                destination_col=destination_col,
-                destination_country_col=destination_country_col,
-                zones_by_name=zones_by_name,
-            ):
-                rows_to_fill.add(row_indexes[i])
-                rows_to_fill.add(row_indexes[j])
+    for idx_a, idx_b in _find_lane_differentiation_pairs(df):
+        rows_to_fill.add(idx_a)
+        rows_to_fill.add(idx_b)
 
     if rows_to_fill:
         df.loc[list(rows_to_fill), diff_col] = df.loc[list(rows_to_fill), destination_col]
@@ -770,6 +838,7 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
     df = _fill_destination_city_to_differentiate_lanes(df)
     df = _uppercase_listed_city_columns(df)
     df = _round_transport_cost_to_2_decimals(df)
+    same_price_lane_rows = _row_indexes_with_same_price_lane_pairs(df)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     output_file = OUTPUT_DIR / f"{source_file.stem}_output.xlsx"
@@ -781,6 +850,7 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
 
         route_fill = PatternFill("solid", fgColor="DCE6F1")
         rates_fill = PatternFill("solid", fgColor="E2F0D9")
+        same_price_lane_fill = PatternFill("solid", fgColor="DCE6F1")
         header_fill = PatternFill("solid", fgColor="F2F2F2")
         bold_font = Font(bold=True)
         regular_font = Font(bold=False)
@@ -939,6 +1009,16 @@ def save_formatted_output(df: pd.DataFrame, source_file: Path) -> Path:
                             color=cell.font.color,
                             underline="single",
                         )
+
+        if same_price_lane_rows:
+            data_end_col = ws.max_column
+            index_to_excel_row = {idx: 5 + pos for pos, idx in enumerate(df.index)}
+            for row_index in same_price_lane_rows:
+                excel_row = index_to_excel_row.get(row_index)
+                if excel_row is None:
+                    continue
+                for col_idx in range(1, data_end_col + 1):
+                    ws.cell(row=excel_row, column=col_idx).fill = same_price_lane_fill
 
     return output_file
 
